@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concept Bank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0B0E; --surface:#18181D; --surface-2:#212127; --border:#2B2B32;
+    --text:#F2F2F4; --muted:#93939C; --accent:#F2F2F4; --err:#FF7A6B;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Inter',ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:44px 24px 80px;}
+
+  .masthead{margin-bottom:22px;}
+  .masthead h1{font-size:28px;line-height:1.2;margin:0 0 6px;font-weight:800;letter-spacing:-0.01em;}
+  .masthead p{margin:0;color:var(--muted);font-size:14px;}
+
+  .search-row{display:flex;align-items:center;gap:10px;border:1.5px solid var(--border);background:var(--surface);border-radius:14px;padding:13px 16px;margin-bottom:18px;}
+  .search-row svg{flex:none;color:var(--muted);}
+  .search-row input{border:none;outline:none;background:none;width:100%;font-size:14.5px;color:var(--text);font-family:inherit;}
+  .search-row input::placeholder{color:var(--muted);}
+  .search-row input:disabled{opacity:0.5;}
+
+  .entry-count{font-size:13px;color:var(--muted);margin:0 2px 20px;}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(270px, 1fr));gap:16px;}
+  .card{
+    display:flex;flex-direction:column;background:var(--surface);border:1.5px solid var(--border);
+    border-radius:16px;padding:18px;text-decoration:none;color:inherit;transition:border-color .15s, transform .12s;
+  }
+  .card:hover{border-color:#45454E;}
+  .card:active{transform:scale(0.99);}
+  .card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .idx{font-size:12px;color:var(--muted);}
+  .tag{font-size:11.5px;color:var(--muted);background:var(--surface-2);border-radius:999px;padding:4px 11px;flex:none;}
+  .name{font-size:16.5px;font-weight:700;letter-spacing:-0.005em;margin-bottom:6px;}
+  .desc{font-size:13px;color:var(--muted);line-height:1.55;flex:1;margin-bottom:16px;}
+  .tags-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+  .tags-row .chip{font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:2px 9px;}
+  .open-pill{align-self:flex-start;font-size:12.5px;font-weight:600;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:7px 15px;}
+
+  .state{grid-column:1/-1;padding:60px 4px;text-align:center;color:var(--muted);font-size:14px;line-height:1.6;}
+  .state.error{color:var(--err);}
+  .state a{color:inherit;}
+  .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--text);display:inline-block;margin-right:8px;vertical-align:-3px;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .footnote{margin-top:36px;font-size:12.5px;color:var(--muted);line-height:1.6;border-top:1px solid var(--border);padding-top:20px;}
+  .footnote code{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;}
+
+  @media (max-width:480px){
+    .masthead h1{font-size:24px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <h1>Concept Bank</h1>
+    <p>A running archive of standalone concepts. Pick one below to open it — each lives on its own, independent of everything else here.</p>
+  </div>
+
+  <div class="search-row">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="searchInput" placeholder="Search concepts…" autocomplete="off" disabled>
+  </div>
+
+  <div class="entry-count" id="entryCount"></div>
+
+  <div class="grid" id="list">
+    <div class="state" id="loadingState"><span class="spinner"></span>Looking through <code>/concepts</code>…</div>
+  </div>
+
+  <div class="footnote">
+    New concept? Just add a folder under <code>/concepts/your-folder/</code> with its own <code>index.html</code> and push it — it shows up here automatically, no file to edit. Add an optional <code>meta.json</code> next to it for a nicer name, description, and tags.
+  </div>
+</div>
+
+<script>
+  const list = document.getElementById('list');
+  const searchInput = document.getElementById('searchInput');
+  const entryCount = document.getElementById('entryCount');
+  let allConcepts = [];
+
+  // ---- figure out which GitHub repo we're being served from ----
+  function detectRepoContext(){
+    const host = location.hostname;
+    if(!host.endsWith('.github.io')) return null;
+    const owner = host.split('.')[0];
+    const segments = location.pathname.split('/').filter(Boolean);
+    const repo = segments.length > 0 ? segments[0] : `${owner}.github.io`;
+    return { owner, repo };
+  }
+
+  function prettify(folderName){
+    return folderName.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  async function loadConcepts(){
+    const ctx = detectRepoContext();
+    if(!ctx){
+      showState('error',
+        `Auto-detection needs this page hosted on GitHub Pages. Opened locally (<code class="mono">file://</code>), there's no API to ask what folders exist — open each concept's <code class="mono">index.html</code> directly instead.`);
+      return;
+    }
+    try{
+      const res = await fetch(`https://api.github.com/repos/${ctx.owner}/${ctx.repo}/contents/concepts`);
+      if(res.status === 404){
+        showState('error', `No <code class="mono">/concepts</code> folder found yet in <code class="mono">${ctx.owner}/${ctx.repo}</code>. Add one with a subfolder inside and refresh.`);
+        return;
+      }
+      if(!res.ok){
+        if(res.status === 403){
+          showState('error', `GitHub's API rate limit was hit while listing concepts. Wait a bit and refresh.`);
+        } else {
+          showState('error', `Couldn't list concepts (GitHub API returned ${res.status}). Refresh to try again.`);
+        }
+        return;
+      }
+      const items = await res.json();
+      const folders = items.filter(i => i.type === 'dir');
+      if(folders.length === 0){
+        showState('empty', `No concepts yet. Add a folder under <code class="mono">/concepts/</code> with an <code class="mono">index.html</code> inside.`);
+        return;
+      }
+
+      allConcepts = await Promise.all(folders.map(async f => {
+        let meta = {};
+        try{
+          const metaRes = await fetch(`concepts/${encodeURIComponent(f.name)}/meta.json`);
+          if(metaRes.ok) meta = await metaRes.json();
+        }catch(_){ /* no meta.json, or not hosted the way we expect — fall back below */ }
+        return {
+          path: f.name,
+          name: meta.name || prettify(f.name),
+          desc: meta.desc || '',
+          tags: Array.isArray(meta.tags) ? meta.tags : []
+        };
+      }));
+      allConcepts.sort((a,b) => a.name.localeCompare(b.name));
+
+      searchInput.disabled = false;
+      render('');
+    }catch(e){
+      showState('error', `Couldn't reach GitHub's API to list concepts. Check your connection and refresh.`);
+    }
+  }
+
+  function showState(kind, html){
+    entryCount.textContent = '';
+    list.innerHTML = `<div class="state${kind==='error' ? ' error' : ''}">${html}</div>`;
+  }
+
+  function render(filter){
+    const q = (filter || '').trim().toLowerCase();
+    const items = allConcepts.filter(c =>
+      !q || c.name.toLowerCase().includes(q) || (c.tags||[]).some(t=>t.toLowerCase().includes(q))
+    );
+    entryCount.textContent = `${allConcepts.length} ${allConcepts.length===1?'entry':'entries'}`;
+
+    if(items.length===0){
+      list.innerHTML = '<div class="state">No concepts match that search.</div>';
+      return;
+    }
+    list.innerHTML = items.map((c,i) => `
+      <a class="card" href="concepts/${encodeURIComponent(c.path)}/index.html">
+        <div class="card-top">
+          <span class="idx mono">${String(i+1).padStart(3,'0')}</span>
+          ${c.tags && c.tags[0] ? `<span class="tag">${escapeHtml(c.tags[0])}</span>` : ''}
+        </div>
+        <div class="name">${escapeHtml(c.name)}</div>
+        ${c.desc ? `<div class="desc">${escapeHtml(c.desc)}</div>` : '<div class="desc"></div>'}
+        ${c.tags && c.tags.length > 1 ? `<div class="tags-row">${c.tags.slice(1).map(t=>`<span class="chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+        <span class="open-pill">Open &rarr;</span>
+      </a>
+    `).join('');
+  }
+  function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  searchInput.addEventListener('input', e => render(e.target.value));
+  loadConcepts();
+</script>
+</body>
+</html>
